@@ -29,23 +29,28 @@ return [
     | Privacy
     |--------------------------------------------------------------------------
     |
-    | cookies     false (default): no cookie is set. A visitor is a hash of the
-    |             IP, user agent and host with a salt that changes every day
-    |             (the IP is hashed, not stored), so nobody can be followed
-    |             across days. Visits are kept together for the visit window
-    |             with the cache.
+    | cookies     false (default): no cookie is set. A visitor id is a keyed
+    |             hash of the IP, user agent and host. The key is a random
+    |             salt made for each UTC day, kept in the cache and dropped
+    |             after two days, so an id cannot be recomputed once its day
+    |             is over (not even with APP_KEY). The same person gets a new
+    |             id every day, and a visit that crosses midnight UTC is
+    |             split in two. Visits are kept together with the cache.
     |             true: a first-party visitor cookie (visitor_days) and a visit
     |             cookie, so returning visitors and earlier anonymous visits
-    |             can be linked to a user who signs up later.
+    |             can be linked to a user who signs up later. Turning cookies
+    |             on is a config switch: asking for consent is up to your app.
     |
-    | ip          "anonymize" stores the IP with the last IPv4 octet / last
-    |             80 IPv6 bits zeroed, "none" stores no IP, "full" stores it.
+    | ip          "none" (default) stores no IP. "anonymize" stores it with
+    |             the last IPv4 octet / last 80 IPv6 bits zeroed, "full"
+    |             stores it as is. No report uses the IP.
     |
     | respect_dnt / respect_gpc   a browser that sends DNT: 1 or Sec-GPC: 1 is
     |             not recorded at all.
     |
-    | Raw user agents, query strings (other than UTM / ref), request bodies
-    | and headers are never stored.
+    | Raw user agents and headers are never stored, nor request bodies (except
+    | the event name and properties the tracking script sends). Of the query
+    | string, only the UTM parameters and ?ref= are kept.
     |
     */
 
@@ -57,7 +62,7 @@ return [
 
     'visit_minutes' => 30,
 
-    'ip' => 'anonymize',
+    'ip' => env('ANALYTICS_IP', 'none'),
 
     'respect_dnt' => true,
 
@@ -121,9 +126,12 @@ return [
     | The @firstPartyAnalytics Blade directive adds a small inline script with
     | analytics.track(name, properties) and click tracking for elements with
     | data-analytics-event. Events are sent to this endpoint with
-    | navigator.sendBeacon. The endpoint checks the Origin, is rate limited
-    | per IP and ignores names starting with "$" (reserved for pageviews).
-    | allowed_events: null accepts any name, or list the names you accept.
+    | navigator.sendBeacon. The endpoint needs the request's Origin header (or
+    | its Referer when a browser sends no Origin) to be exactly this site:
+    | same scheme, host and port. It is rate limited per IP, refuses names
+    | starting with "$" (reserved for pageviews) or over 100 characters, and
+    | keeps up to 25 properties (keys cut to 40 characters, string values to
+    | 255). allowed_events: null accepts any name, or list the names you accept.
     |
     */
 

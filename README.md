@@ -13,9 +13,11 @@ sessions, pages, referrers and UTM campaigns, custom events from PHP and JavaScr
 ordered funnels** in two tables of your Laravel app's own database, filters out bots, and shows it all on
 a gated Blade dashboard.
 
-Privacy is the default: **no cookies** unless you turn them on, IP addresses anonymised, Do-Not-Track and
-Global Privacy Control respected, no raw user agents, query strings, request bodies or headers stored,
-retention pruning built in, and **no network calls at all**. Writes happen after the response is sent (or
+Privacy is the default: **no cookies** unless you turn them on, **no IP address stored** unless you turn it
+on, Do-Not-Track and Global Privacy Control respected, no raw user agents, headers or request bodies stored
+(except the event name and properties your tracking script sends),
+nothing from the query string except UTM parameters and `?ref=`, retention pruning built in, and
+**no network calls at all**. Writes happen after the response is sent (or
 on your queue), in one batch per request.
 
 Docs and demo: https://amjad.com.pk/laravel/packages/laravel-first-party-analytics
@@ -54,7 +56,8 @@ designed to collect as little as possible.
 ## What gets recorded
 
 A **pageview** is a successful (2xx) HTML response to a `GET` request on a `web` route. Not recorded:
-JSON and AJAX requests, Livewire updates, redirects, errors, prefetches (`Sec-Purpose: prefetch`),
+JSON and AJAX requests, Livewire updates, redirects, errors, prefetches (`Sec-Purpose`, `Purpose` or
+`X-Moz: prefetch`),
 the dashboard itself, and the paths in `exclude_paths` (`admin*`, `livewire/*`, `telescope*`, `horizon*`,
 `pulse*`, `nova*`, `filament*`, `_debugbar/*`, `up`...).
 
@@ -63,11 +66,11 @@ A **visit** groups a visitor's pageviews and events. It ends after 30 minutes wi
 
 | | |
 |---|---|
-| Landing page | path only, no query string |
+| Landing page | path only; of the query string only the UTM parameters and `?ref=` are kept (below) |
 | Source | `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content` (or `?ref=` as the source), and the referrer: another site's URL **without its query string**, and its host |
 | Device | browser, operating system and device type (desktop, mobile, tablet), parsed and then discarded: the user agent itself is never stored |
 | Country | only from a header your CDN already sends (`CF-IPCountry` by default); no GeoIP lookups |
-| IP | anonymised (last IPv4 octet / last 80 IPv6 bits zeroed), or `none`, or `full` |
+| IP | **nothing by default** (`ip` = `none`); opt in to `anonymize` (last IPv4 octet / last 80 IPv6 bits zeroed) or `full` |
 | User | the signed-in user's id, if any |
 
 **Bots are not recorded.** That covers crawlers, AI scrapers, uptime monitors, headless browsers,
@@ -82,14 +85,16 @@ Payment and sign-in pages that send visitors back mid-visit (`checkout.stripe.co
 
 | Option | Default | |
 |---|---|---|
-| `cookies` | `false` | No cookie is set. A visitor is a hash of the IP, user agent and host with a **salt that changes every day**, so nobody can be followed across days, and the IP is only hashed, never stored. The cache keeps a visit together. Set `true` (or `ANALYTICS_COOKIES=true`) for a first-party `fpa_visitor` cookie (365 days, `visitor_days`) and an `fpa_visit` cookie (30 minutes): then returning visitors are recognised, and a visitor's earlier anonymous visits are linked to them when they sign up. Both are `HttpOnly`, `SameSite=Lax` and encrypted like your other cookies. |
-| `ip` | `anonymize` | `none` stores no IP; `full` stores it as is. |
+| `cookies` | `false` | No cookie is set. The visitor id is a keyed hash (HMAC-SHA256) of the IP, user agent and host. The key is a **random salt made for each UTC day**, kept in your cache and deleted after two days. While the day lasts, anyone who can read that cache entry could recompute an id from a known IP and browser; once the salt is gone, nobody can, not even with `APP_KEY`. The same person gets a new id every day, so nobody can be followed across days. The cache also keeps each visit together. Set `true` (or `ANALYTICS_COOKIES=true`) for a first-party `fpa_visitor` cookie (365 days, `visitor_days`) and an `fpa_visit` cookie (30 minutes): then returning visitors are recognised, and a visitor's earlier anonymous visits are linked to them when they sign up. Both are `HttpOnly`, `SameSite=Lax` and encrypted like your other cookies. |
+| `ip` | `none` | No IP is stored (no report uses it). `anonymize` stores it with the last IPv4 octet / last 80 IPv6 bits zeroed; `full` stores it as is. Also `ANALYTICS_IP`. |
 | `respect_dnt` | `true` | Browsers sending `DNT: 1` are not recorded at all. |
 | `respect_gpc` | `true` | Browsers sending `Sec-GPC: 1` are not recorded at all. |
 | `retention_days` | `395` | `php artisan analytics:prune` deletes older visits and events. `null` keeps everything. |
 
 Without cookies, "unique visitors" are unique per day: over a 30-day range the same person counts once per
-day they visited.
+day they visited. And because the id changes at midnight UTC, a visit that crosses midnight UTC is split
+into two visits from two visitors. With cookies on, neither happens. If the cache is cleared, the day gets a
+new salt, so the same thing happens then.
 
 Skip some visitors (your own team, for example) from a service provider:
 
@@ -100,8 +105,9 @@ use Illuminate\Http\Request;
 Analytics::ignoreUsing(fn (Request $request) => $request->user()?->is_staff === true);
 ```
 
-Whether you need consent depends on your jurisdiction and on the options you choose; this package
-gives you the settings, not legal advice.
+There is **no consent mechanism** in the package: cookie mode is a config switch, so if you turn it on (or
+store IPs), asking for and recording consent is up to your app. Whether you need consent depends on your
+jurisdiction and on the options you choose; this package gives you the settings, not legal advice.
 
 ## Custom events
 
@@ -117,8 +123,8 @@ Analytics::track('signup', ['plan' => 'pro']);
 Analytics::track('invoice_paid', ['amount' => 49], $user);
 ```
 
-Properties are kept flat and small: up to 25 keys, scalar values, strings cut to 255 characters.
-Names starting with `$` are reserved (`$pageview`).
+Properties are kept flat and small: up to 25 keys, keys cut to 40 characters, scalar values only, strings
+cut to 255 characters. Names are cut to 100 characters; names starting with `$` are reserved (`$pageview`).
 
 ### From the browser
 
@@ -141,8 +147,12 @@ and click tracking without any JavaScript of your own:
 ```
 
 Events are sent with `navigator.sendBeacon` to `POST /fpa/event` (`js.endpoint`). The endpoint needs no
-CSRF token, so instead it only accepts requests whose `Origin` is your own site, it is rate limited per IP
-(`js.rate_limit`, 120 a minute), and it can be limited to the event names you list in `js.allowed_events`.
+CSRF token, so instead it only accepts a request whose `Origin` header (or, if a browser sends none, its
+`Referer`) is **exactly your site: same scheme, host and port**. Behind a load balancer or proxy that ends
+TLS, [trust your proxies](https://laravel.com/docs/requests#configuring-trusted-proxies) so Laravel knows
+the request is `https`, or every event is refused with 403. The endpoint is rate limited per IP
+(`js.rate_limit`, 120 a minute), drops names over 100 characters or starting with `$`, and can be limited to
+the event names you list in `js.allowed_events`.
 `analytics` is only set when no other script (such as Segment) already uses that name; `fpa` is always there.
 
 ## Users
@@ -173,9 +183,9 @@ event name, or `page:/path` for a pageview (`page:/blog/*` matches a prefix).
 
 ## The dashboard
 
-`/analytics` (`dashboard.path`) shows, for today, 7, 30 or 90 days, 12 months or a custom range:
+`/analytics` (`dashboard.path`) shows, for today, 7, 30 or 90 days, 12 months or a custom range (at most 400 days):
 
-- unique visitors, visits, pageviews, bounce rate (visits with one pageview), average visit duration, events;
+- unique visitors, visits, pageviews, bounce rate (visits with at most one pageview and no custom event), average visit duration, events;
 - visits per day;
 - top pages and entry pages;
 - channels (Direct, Organic search, Social, Email, Paid, Campaign, Referral), referrers, UTM source, medium and campaign;
@@ -201,7 +211,8 @@ emptying that list cannot expose it.
 
 ## Writes and performance
 
-Nothing is written while your page is being built. Everything a request records (the new visit, the
+Nothing is written to your database while your page is being built (in no-cookie mode, the first request
+of each UTC day stores the day's salt in the cache). Everything a request records (the new visit, the
 pageview, your events) is collected and inserted in one batch:
 
 | `write` | |

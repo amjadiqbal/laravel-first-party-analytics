@@ -10,7 +10,8 @@ use Illuminate\Http\Response;
 
 /**
  * Receives events from the browser script (navigator.sendBeacon). The route is exempt from CSRF so a
- * beacon needs no token, so instead the Origin (or Referer) must be this site; it is rate limited per IP.
+ * beacon needs no token, so instead the Origin header (or, when a browser sends none, the Referer) must
+ * be exactly this site: same scheme, host and port. It is rate limited per IP.
  * Always answers 204, so the endpoint tells a caller nothing.
  */
 final class EventController
@@ -48,8 +49,19 @@ final class EventController
             return false;
         }
 
-        $host = parse_url($origin, PHP_URL_HOST);
+        $parts = parse_url($origin);
 
-        return is_string($host) && strcasecmp($host, $request->getHost()) === 0;
+        if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])) {
+            return false;
+        }
+
+        // The full origin must match: scheme, host and port (behind a TLS-terminating proxy, configure
+        // trusted proxies so the request knows it is https).
+        $scheme = strtolower($parts['scheme']);
+        $port = $parts['port'] ?? ($scheme === 'https' ? 443 : 80);
+
+        return $scheme === $request->getScheme()
+            && strcasecmp($parts['host'], $request->getHost()) === 0
+            && $port === (int) $request->getPort();
     }
 }

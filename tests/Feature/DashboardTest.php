@@ -91,6 +91,16 @@ it('averages whole seconds without float drift', function () {
     expect($report->summary()['avg_duration'])->toBe(5);
 });
 
+it('does not count a visit with a custom event as a bounce', function () {
+    $this->browse('/', ip: '192.0.2.1');                                   // one pageview: bounce
+    $this->browse('/', ip: '192.0.2.2');
+    $this->postAs('/fpa/event', ['name' => 'video_played', 'path' => '/'], ['Origin' => 'http://localhost'], ip: '192.0.2.2'); // pageview + event
+    $this->postAs('/fpa/event', ['name' => 'widget_opened', 'path' => '/embed'], ['Origin' => 'http://localhost'], ip: '192.0.2.3'); // event only
+
+    $report = new Report(app(Store::class), now()->startOfDay(), now()->addDay()->startOfDay());
+    expect($report->summary()['visits'])->toBe(3)->and($report->summary()['bounce_rate'])->toBe(33.3);
+});
+
 it('counts funnel steps in order within a visit', function () {
     seedTraffic($this);
     $report = new Report(app(Store::class), now()->startOfDay(), now()->addDay()->startOfDay());

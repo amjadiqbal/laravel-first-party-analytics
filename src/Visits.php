@@ -13,6 +13,7 @@ use Illuminate\Cookie\CookieJar;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Finds the visit a request belongs to, or starts one.
@@ -25,6 +26,9 @@ use Illuminate\Support\Str;
 final class Visits
 {
     private const string ATTRIBUTE = 'first-party-analytics.visit';
+
+    /** @var array<string, string> the current day's salt, remembered for this process */
+    private array $salts = [];
 
     public function __construct(
         private readonly Recorder $recorder,
@@ -119,7 +123,7 @@ final class Visits
             ...Source::fromRequest($request),
             ...UserAgent::parse($request->userAgent()),
             'country' => preg_match('/^[A-Z]{2}$/', $country) === 1 && ! in_array($country, ['XX', 'T1'], true) ? $country : null,
-            'ip' => Ip::forStorage($request->ip(), (string) config('first-party-analytics.ip', 'anonymize')),
+            'ip' => Ip::forStorage($request->ip(), (string) config('first-party-analytics.ip', 'none')),
         ];
     }
 
@@ -131,16 +135,39 @@ final class Visits
             return is_string($cookie) && preg_match('/^[A-Za-z0-9]{32}$/', $cookie) === 1 ? $cookie : Str::random(32);
         }
 
-        // No cookie: a hash of the IP, user agent and host, salted per day with the app key (the
-        // IP is only hashed, never stored), so the same person gets a new id every day.
-        $key = (string) config('app.key');
-
+        // No cookie: a keyed hash of the IP, user agent and host. The key is a random salt made for
+        // the current UTC day, kept in the cache and dropped after two days, so once a day is over
+        // nobody (not even with APP_KEY) can recompute an id from a known IP and browser.
         return substr(hash_hmac('sha256', implode('|', [
-            Date::now()->utc()->format('Y-m-d'),
             (string) $request->ip(),
             (string) $request->userAgent(),
             $request->getHost(),
-        ]), $key), 0, 32);
+        ]), $this->dailySalt()), 0, 32);
+    }
+
+    /** The random salt of the current UTC day (one cache write a day; `add` keeps concurrent requests on one salt). */
+    private function dailySalt(): string
+    {
+        $day = Date::now()->utc()->format('Y-m-d');
+
+        if (isset($this->salts[$day])) {
+            return $this->salts[$day];
+        }
+
+        $key = 'fpa:salt:'.$day;
+        $salt = null;
+
+        try {
+            $this->store()->add($key, bin2hex(random_bytes(32)), 2 * 86400);
+            $salt = $this->store()->get($key);
+        } catch (Throwable $e) {
+            report($e);
+        }
+
+        // Without a working cache, a salt for this process only: visitors are counted per process.
+        $this->salts = [$day => is_string($salt) && $salt !== '' ? $salt : bin2hex(random_bytes(32))];
+
+        return $this->salts[$day];
     }
 
     /**

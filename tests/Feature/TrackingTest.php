@@ -2,6 +2,7 @@
 
 use AmjadIqbal\FirstPartyAnalytics\Facades\Analytics;
 use AmjadIqbal\FirstPartyAnalytics\Tests\TestCase;
+use AmjadIqbal\FirstPartyAnalytics\Visits;
 use Illuminate\Http\Request;
 
 it('records a pageview and starts a visit with its source', function () {
@@ -23,7 +24,7 @@ it('records a pageview and starts a visit with its source', function () {
         ->and($visit->os)->toBe('macOS')
         ->and($visit->device)->toBe('desktop')
         ->and($visit->country)->toBe('DE')
-        ->and($visit->ip)->toBe('203.0.113.0')
+        ->and($visit->ip)->toBeNull()
         ->and(strlen($visit->visitor))->toBe(32);
 
     $event = $this->events()->sole();
@@ -142,7 +143,65 @@ it('skips visitors the app ignores', function () {
     $this->browse('/', ip: '10.0.0.5');
     $this->browse('/', ip: '10.0.0.6');
 
-    expect($this->visits()->count())->toBe(1)->and($this->visits()->value('ip'))->toBe('10.0.0.0');
+    expect($this->visits()->count())->toBe(1);
+});
+
+it('stores no IP by default', function () {
+    $this->browse('/', ip: '203.0.113.77');
+
+    expect($this->visits()->value('ip'))->toBeNull()
+        ->and(json_encode($this->visits()->first()))->not->toContain('203.0.113');
+});
+
+it('makes the no-cookie visitor id from a random daily salt, not from APP_KEY', function () {
+    $this->travelTo('2026-10-20 10:00:00');
+    $this->browse('/', ip: '198.51.100.9');
+    $visitor = $this->visits()->value('visitor');
+
+    $salt = app('cache')->store()->get('fpa:salt:2026-10-20');
+    expect($salt)->toBeString()->toHaveLength(64);
+
+    // The old scheme (HMAC with the app key) cannot reproduce the id.
+    $withAppKey = substr(hash_hmac('sha256', implode('|', ['2026-10-20', '198.51.100.9', TestCase::CHROME, 'localhost']), (string) config('app.key')), 0, 32);
+    expect($visitor)->not->toBe($withAppKey)
+        ->and($visitor)->toBe(substr(hash_hmac('sha256', implode('|', ['198.51.100.9', TestCase::CHROME, 'localhost']), $salt), 0, 32));
+});
+
+it('cannot recompute a visitor id once the day\'s salt is gone', function () {
+    $this->travelTo('2026-10-20 10:00:00');
+    $this->browse('/', ip: '198.51.100.9');
+
+    // The salt expires after two days; dropping it (and the process copy) gives the same person a new id.
+    app('cache')->store()->forget('fpa:salt:2026-10-20');
+    app('cache')->store()->forget('fpa:visit:'.$this->visits()->value('visitor'));
+    $this->app->forgetInstance(Visits::class);
+    $this->app->forgetInstance(AmjadIqbal\FirstPartyAnalytics\Analytics::class);
+    $this->browse('/', ip: '198.51.100.9');
+
+    expect($this->visits()->distinct()->count('visitor'))->toBe(2);
+});
+
+it('splits a no-cookie visit at midnight UTC', function () {
+    $this->travelTo('2026-10-20 23:50:00');
+    $this->browse('/');
+    $this->travelTo('2026-10-21 00:05:00');
+    $this->browse('/pricing');
+
+    expect($this->visits()->count())->toBe(2)->and($this->visits()->distinct()->count('visitor'))->toBe(2);
+});
+
+it('keeps one visit across midnight with cookies', function () {
+    config(['first-party-analytics.cookies' => true]);
+    $this->travelTo('2026-10-20 23:50:00');
+    $response = $this->browse('/');
+    $cookies = [];
+    foreach ($response->headers->getCookies() as $cookie) {
+        $cookies[$cookie->getName()] = $response->getCookie($cookie->getName())?->getValue();
+    }
+    $this->travelTo('2026-10-21 00:05:00');
+    $this->withCookies($cookies)->browse('/pricing');
+
+    expect($this->visits()->count())->toBe(1);
 });
 
 it('stores the IP as configured', function (string $mode, string $ip, ?string $stored) {

@@ -71,6 +71,23 @@ it('starts a visit for a browser event when none is in progress', function () {
     expect($this->visits()->value('landing_path'))->toBe('/watch');
 });
 
+it('rejects browser events whose origin differs in scheme, host or port', function (array $headers) {
+    $this->postAs('/fpa/event', ['name' => 'spam', 'path' => '/'], $headers)->assertForbidden();
+
+    expect($this->events()->count())->toBe(0);
+})->with([
+    'https vs http' => [['Origin' => 'https://localhost']],
+    'other port' => [['Origin' => 'http://localhost:8080']],
+    'subdomain' => [['Origin' => 'http://evil.localhost']],
+    'referer other scheme' => [['Referer' => 'https://localhost/page']],
+]);
+
+it('accepts the Referer when a browser sends no Origin, if it is exactly this site', function () {
+    $this->postAs('/fpa/event', ['name' => 'from_referer', 'path' => '/'], ['Referer' => 'http://localhost/pricing'])->assertNoContent();
+
+    expect($this->events()->where('name', 'from_referer')->count())->toBe(1);
+});
+
 it('rejects browser events from other origins or without an origin', function (array $headers) {
     $this->postAs('/fpa/event', ['name' => 'spam', 'path' => '/'], $headers)->assertForbidden();
 

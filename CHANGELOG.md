@@ -5,6 +5,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-23
+
+Privacy fixes after a review of v0.1.0's claims against its code.
+
+### Security / Privacy
+- **No IP address is stored by default.** The `ip` option now defaults to `none` (it was `anonymize`, while
+  the README said IPs were never stored). `anonymize` and `full` are opt-in (`ANALYTICS_IP`).
+- **The no-cookie visitor id no longer derives from `APP_KEY`.** It is an HMAC of the IP, user agent and
+  host keyed with a random salt made for each UTC day, kept in the cache and deleted after two days. Before,
+  anyone with `APP_KEY` could recompute an id from a known IP and browser for any past day.
+- **The browser event endpoint checks the full origin.** The `Origin` (or, without one, the `Referer`) must
+  match scheme, host and port; v0.1.0 compared the host only.
+
+### Fixed
+- Bounce rate: a visit with a custom event (including an event-only visit) is no longer counted as a bounce.
+  A bounce is now a visit with at most one pageview and no custom event.
+
+### Documentation
+- Wording matches the code: the IP default; how the daily salt works and who can recompute an id during the
+  day; that a no-cookie visit crossing midnight UTC splits in two; that UTM parameters and `?ref=` are the
+  only query-string values kept; that event names and properties are the only request-body data stored;
+  that there is no consent mechanism (cookie mode is a config switch); the 400-day custom-range cap; property
+  keys cut to 40 characters; browser event names over 100 characters dropped; `Purpose` / `X-Moz` prefetches
+  skipped; trusted proxies are needed behind a TLS-terminating proxy.
+
+### Upgrading from 0.1.0
+- New visits store no IP. Rows recorded by 0.1.0 keep their anonymised IP; to remove it, run
+  `UPDATE analytics_visits SET ip = NULL` (or let `analytics:prune` age them out). To keep storing anonymised
+  IPs, set `ANALYTICS_IP=anonymize` (or `'ip' => 'anonymize'` in a published config).
+- If you published the config, change `'ip' => 'anonymize'` to `'ip' => env('ANALYTICS_IP', 'none')`.
+- No-cookie visitor ids change once on upgrade (new salt), so a visit in progress at deploy time splits in two.
+- Behind a load balancer or proxy that ends TLS, make sure trusted proxies are configured, or browser events
+  are refused with 403.
+
 ## [0.1.0] - 2026-10-23
 
 First release.

@@ -24,6 +24,8 @@ final class Report
     ) {}
 
     /**
+     * A bounce is a visit with at most one pageview and no custom event.
+     *
      * @return array{visitors: int, visits: int, pageviews: int, events: int, bounce_rate: ?float, avg_duration: ?int, pages_per_visit: ?float}
      */
     public function summary(): array
@@ -35,7 +37,7 @@ final class Report
 
         $perVisit = $this->store->connection()->query()
             ->fromSub($this->perVisit(), 'v')
-            ->selectRaw('COUNT(*) as n, SUM(CASE WHEN pv <= 1 THEN 1 ELSE 0 END) as bounces, AVG(secs) as secs, AVG(pv) as pv')
+            ->selectRaw('COUNT(*) as n, SUM(CASE WHEN pv <= 1 AND ev = 0 THEN 1 ELSE 0 END) as bounces, AVG(secs) as secs, AVG(pv) as pv')
             ->first();
 
         $n = (int) ($perVisit->n ?? 0);
@@ -274,7 +276,7 @@ final class Report
             : $path === $page);
     }
 
-    /** One row per visit started in the range: its pageview count and duration in seconds. */
+    /** One row per visit started in the range: its pageviews, custom events and duration in seconds. */
     private function perVisit(): Builder
     {
         $grammar = $this->store->connection()->getQueryGrammar();
@@ -285,6 +287,7 @@ final class Report
             ->groupBy('visit_token')
             ->select('visit_token')
             ->selectRaw('SUM(CASE WHEN name = ? THEN 1 ELSE 0 END) as pv', [Analytics::PAGEVIEW])
+            ->selectRaw('SUM(CASE WHEN name <> ? THEN 1 ELSE 0 END) as ev', [Analytics::PAGEVIEW])
             ->selectRaw($this->seconds("MIN({$created})", "MAX({$created})").' as secs');
     }
 
