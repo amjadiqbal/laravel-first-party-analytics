@@ -4,7 +4,10 @@ use AmjadIqbal\FirstPartyAnalytics\Facades\Analytics;
 use AmjadIqbal\FirstPartyAnalytics\Jobs\RecordAnalytics;
 use AmjadIqbal\FirstPartyAnalytics\Recorder;
 use AmjadIqbal\FirstPartyAnalytics\Store;
+use AmjadIqbal\FirstPartyAnalytics\Tests\TestCase;
+use AmjadIqbal\FirstPartyAnalytics\Visits;
 use Illuminate\Auth\GenericUser;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Queue;
 
@@ -121,6 +124,20 @@ it('buffers a request\'s writes until the application terminates', function () {
 
     $this->app->terminate();
     expect($this->events()->count())->toBe(2);
+});
+
+it('saves no-cookie visit state to the cache only after the response', function () {
+    $recorder = app(Recorder::class);
+    $recorder->buffer = true;
+    $cache = app('cache')->store();
+
+    $request = Request::create('/', 'GET', server: ['HTTP_USER_AGENT' => TestCase::CHROME, 'REMOTE_ADDR' => '192.0.2.1']);
+    $visit = app(Visits::class)->resolve($request);
+
+    expect($cache->get('fpa:visit:'.$visit['visitor']))->toBeNull();
+
+    $recorder->flush();
+    expect($cache->get('fpa:visit:'.$visit['visitor'])['token'])->toBe($visit['token']);
 });
 
 it('writes one queued job per request in queue mode', function () {

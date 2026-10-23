@@ -173,7 +173,8 @@ final class Visits
         $state = ['token' => $visit['token'], 'user' => $visit['user'], 'source' => $visit['source']];
 
         if (! $this->usesCookies()) {
-            $this->store()->put('fpa:visit:'.$visit['visitor'], $state, $minutes * 60);
+            $key = 'fpa:visit:'.$visit['visitor'];
+            $this->recorder->afterwards($key, fn () => $this->store()->put($key, $state, $minutes * 60));
 
             return;
         }

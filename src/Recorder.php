@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AmjadIqbal\FirstPartyAnalytics;
 
 use AmjadIqbal\FirstPartyAnalytics\Jobs\RecordAnalytics;
+use Closure;
 use Illuminate\Contracts\Foundation\Application;
 use Throwable;
 
@@ -18,6 +19,9 @@ final class Recorder
 {
     /** @var list<array<string, mixed>> */
     private array $pending = [];
+
+    /** @var array<string, Closure(): void> */
+    private array $afterwards = [];
 
     /** Overrides the console check (tests). */
     public ?bool $buffer = null;
@@ -36,8 +40,34 @@ final class Recorder
         }
     }
 
+    /**
+     * Runs a small in-process step (saving visit state to the cache) with the next flush, so it never
+     * slows the response either. A later call with the same key replaces an earlier one.
+     *
+     * @param  Closure(): mixed  $callback
+     */
+    public function afterwards(string $key, Closure $callback): void
+    {
+        $this->afterwards[$key] = $callback;
+
+        if (! $this->buffers()) {
+            $this->flush();
+        }
+    }
+
     public function flush(): void
     {
+        $afterwards = $this->afterwards;
+        $this->afterwards = [];
+
+        foreach ($afterwards as $callback) {
+            try {
+                $callback();
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
+
         if ($this->pending === []) {
             return;
         }
