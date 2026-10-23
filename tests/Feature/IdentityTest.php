@@ -52,7 +52,7 @@ it('links the visit and the visitor\'s earlier anonymous visits when the user si
 
     $this->travelTo('2026-10-22 10:00:00');
     $cookies = cookiesOf($this->withCookies(['fpa_visitor' => $visitor])->browse('/pricing'));
-    $this->withCookies($cookies)->postAs('/login-as/42');
+    $this->withCookies($cookies)->postAs('/login-as/42')->assertOk();
 
     expect($this->visits()->pluck('user_id')->all())->toBe(['42', '42'])
         ->and($this->events()->pluck('user_id')->unique()->all())->toBe(['42']);
@@ -64,7 +64,7 @@ it('links the visit and the visitor\'s earlier anonymous visits when the user si
 
 it('links only the current visit without cookies', function () {
     $this->browse('/');
-    $this->postAs('/login-as/7');
+    $this->postAs('/login-as/7')->assertOk();
     $this->actingAs(new GenericUser(['id' => 7]))->browse('/pricing');
 
     expect($this->visits()->sole()->user_id)->toBe('7')
@@ -80,13 +80,13 @@ it('identifies a user who registered (the Registered event)', function () {
         return 'ok';
     })->middleware('web');
 
-    $this->postAs('/register');
+    $this->postAs('/register')->assertOk();
 
     expect($this->visits()->value('user_id'))->toBe('99');
 });
 
 it('does not start a visit just to identify a user', function () {
-    $this->postAs('/login-as/5');
+    $this->postAs('/login-as/5')->assertOk();
 
     expect($this->visits()->count())->toBe(0);
 });

@@ -72,7 +72,7 @@ abstract class TestCase extends Orchestra
                 return '<p>Thanks</p>';
             });
             Route::post('/login-as/{id}', function (string $id) {
-                Auth::login(new GenericUser(['id' => (int) $id, 'name' => 'User '.$id, 'remember_token' => null]));
+                Auth::login(new GenericUser(['id' => (int) $id, 'name' => 'User '.$id, 'password' => 'hashed', 'remember_token' => null]));
 
                 return '<p>Signed in</p>';
             });
