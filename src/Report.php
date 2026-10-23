@@ -312,7 +312,7 @@ final class Report
     private function seconds(string $from, string $to): string
     {
         return match ($this->store->connection()->getDriverName()) {
-            'sqlite' => "((julianday({$to}) - julianday({$from})) * 86400)",
+            'sqlite' => "(CAST(strftime('%s', {$to}) AS INTEGER) - CAST(strftime('%s', {$from}) AS INTEGER))",
             'pgsql' => "EXTRACT(EPOCH FROM ({$to} - {$from}))",
             'sqlsrv' => "DATEDIFF(SECOND, {$from}, {$to})",
             default => "TIMESTAMPDIFF(SECOND, {$from}, {$to})",

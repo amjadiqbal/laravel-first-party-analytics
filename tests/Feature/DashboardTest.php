@@ -78,6 +78,19 @@ it('reports numbers that match the database', function () {
     expect(collect($report->timeline())->firstWhere('day', '2026-10-20'))->toBe(['day' => '2026-10-20', 'visits' => 3, 'pageviews' => 5]);
 });
 
+it('averages whole seconds without float drift', function () {
+    // Visits of 3 s and 6 s: 4.5 s rounds to 5 (julianday() arithmetic gave 4.4999...).
+    foreach ([['192.0.2.1', 3], ['192.0.2.2', 6]] as [$ip, $seconds]) {
+        $this->travelTo('2026-10-20 09:00:00');
+        $this->browse('/', ip: $ip);
+        $this->travel($seconds)->seconds();
+        $this->browse('/pricing', ip: $ip);
+    }
+
+    $report = new Report(app(Store::class), now()->startOfDay(), now()->addDay()->startOfDay());
+    expect($report->summary()['avg_duration'])->toBe(5);
+});
+
 it('counts funnel steps in order within a visit', function () {
     seedTraffic($this);
     $report = new Report(app(Store::class), now()->startOfDay(), now()->addDay()->startOfDay());
