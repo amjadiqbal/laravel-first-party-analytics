@@ -25,7 +25,7 @@ Docs and demo: https://amjad.com.pk/laravel/packages/laravel-first-party-analyti
 [![License](https://img.shields.io/packagist/l/amjadiqbal/laravel-first-party-analytics.svg?style=flat-square)](LICENSE.md)
 
 <p align="center">
-  <img alt="The analytics dashboard: unique visitors, visits, pageviews, bounce rate, average visit and events; visits per day; top and entry pages; channels, referrers and UTM sources; devices and browsers; events, conversions and a checkout funnel" src="art/screenshot.png" width="100%">
+  <img alt="The analytics dashboard from a real test app: unique visitors, visits, pageviews, bounce rate, average visit and events; visits per day; top and entry pages; channels, referrers and UTM sources" src="art/screenshot.png" width="100%">
 </p>
 
 ```bash
