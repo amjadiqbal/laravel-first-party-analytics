@@ -49,10 +49,10 @@
         ol.bars li .v { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
         ol.bars li .v b { color: var(--text); font-weight: 600; }
         .empty { color: var(--muted); font-size: 13.5px; padding: 6px 0; }
-        .chart { width: 100%; height: 170px; display: block; }
+        .chart { width: 100%; height: 150px; display: block; }
         .chart rect.v { fill: var(--bar); }
         .chart rect.v:hover { fill: var(--bar-2); }
-        .chart text { fill: var(--muted); font-size: 11px; }
+        .axis { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; margin-top: 6px; }
         table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
         table.t th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
         table.t td { padding: 7px 8px; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
@@ -118,15 +118,13 @@
     <section class="panel" aria-label="Visits per day">
         <h2>Visits per day <small>{{ $summary['pages_per_visit'] === null ? '' : $summary['pages_per_visit'].' pages per visit' }}</small></h2>
         @php $n = count($timeline); $w = 1000 / max(1, $n); @endphp
-        <svg class="chart" viewBox="0 0 1000 170" preserveAspectRatio="none" role="img" aria-label="Visits per day">
+        <svg class="chart" viewBox="0 0 1000 150" preserveAspectRatio="none" role="img" aria-label="Visits per day">
             @foreach ($timeline as $i => $d)
-                @php $h = round(125 * $d['visits'] / $maxDay, 2); @endphp
-                <rect class="v" x="{{ round($i * $w + $w * 0.12, 2) }}" y="{{ 145 - $h }}" width="{{ round($w * 0.76, 2) }}" height="{{ max($h, 0.5) }}" rx="2"><title>{{ $d['day'] }}: {{ $d['visits'] }} visits, {{ $d['pageviews'] }} pageviews</title></rect>
+                @php $h = round(145 * $d['visits'] / $maxDay, 2); @endphp
+                <rect class="v" x="{{ round($i * $w + $w * 0.12, 2) }}" y="{{ 150 - max($h, 0.5) }}" width="{{ round($w * 0.76, 2) }}" height="{{ max($h, 0.5) }}" rx="2"><title>{{ $d['day'] }}: {{ $d['visits'] }} visits, {{ $d['pageviews'] }} pageviews</title></rect>
             @endforeach
-            <text x="0" y="165">{{ $timeline[0]['day'] ?? '' }}</text>
-            <text x="1000" y="165" text-anchor="end">{{ $timeline[$n - 1]['day'] ?? '' }}</text>
-            <text x="1000" y="12" text-anchor="end">max {{ $maxDay }}</text>
         </svg>
+        <div class="axis"><span>{{ $timeline[0]['day'] ?? '' }}</span><span>max {{ $maxDay }} visits a day</span><span>{{ $timeline[$n - 1]['day'] ?? '' }}</span></div>
     </section>
 
     @php
