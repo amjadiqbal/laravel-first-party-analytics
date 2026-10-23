@@ -120,7 +120,7 @@
         @php $n = count($timeline); $w = 1000 / max(1, $n); @endphp
         <svg class="chart" viewBox="0 0 1000 170" preserveAspectRatio="none" role="img" aria-label="Visits per day">
             @foreach ($timeline as $i => $d)
-                @php $h = round(140 * $d['visits'] / $maxDay, 2); @endphp
+                @php $h = round(125 * $d['visits'] / $maxDay, 2); @endphp
                 <rect class="v" x="{{ round($i * $w + $w * 0.12, 2) }}" y="{{ 145 - $h }}" width="{{ round($w * 0.76, 2) }}" height="{{ max($h, 0.5) }}" rx="2"><title>{{ $d['day'] }}: {{ $d['visits'] }} visits, {{ $d['pageviews'] }} pageviews</title></rect>
             @endforeach
             <text x="0" y="165">{{ $timeline[0]['day'] ?? '' }}</text>
