@@ -5,6 +5,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-24
+
+Second privacy review: the last places where the docs promised more than the code did.
+
+### Privacy
+- **The daily salt now expires at midnight UTC**, the end of its own day (it was kept for two days from
+  creation, so readable through the next day). An id really cannot be recomputed once its day is over.
+  No-cookie visits already split at midnight, so counting is unchanged.
+- **An unknown `ip` value fails closed.** A typo in `ANALYTICS_IP` (for example `anonymise`) used to store
+  anonymised IPs; any value other than `none`, `anonymize` or `full` now stores no IP, logs a warning naming
+  the value (once per process), and `php artisan about` shows it on a new "IP storage" line.
+
+### Added
+- `ANALYTICS_COUNTRY_HEADER` and `ANALYTICS_CACHE_STORE` environment variables.
+
+### Documentation
+- The README and config say that the two-letter value of `CF-IPCountry` is the one header that is stored (as
+  the visit's country), and how to turn it off (`country_header` = `null`).
+- `cache_store` also holds the daily salt: with the `array` driver every request is a new visit, and with a
+  per-server store (`file`, `apc`) each server makes its own salt, so use a store shared by all servers.
+
+### Upgrading from 0.1.1
+- Nothing to change. If you set `ANALYTICS_IP`, check `php artisan about`: an unrecognised value now stores
+  nothing instead of anonymised IPs.
+
 ## [0.1.1] - 2026-10-23
 
 Privacy fixes after a review of v0.1.0's claims against its code.

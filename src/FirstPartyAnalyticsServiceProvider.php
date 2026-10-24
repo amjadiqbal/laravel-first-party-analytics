@@ -11,6 +11,7 @@ use AmjadIqbal\FirstPartyAnalytics\Http\DashboardController;
 use AmjadIqbal\FirstPartyAnalytics\Http\EventController;
 use AmjadIqbal\FirstPartyAnalytics\Http\TrackVisits;
 use AmjadIqbal\FirstPartyAnalytics\Support\CrawlerDetectBots;
+use AmjadIqbal\FirstPartyAnalytics\Support\Ip;
 use Composer\InstalledVersions;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Registered;
@@ -86,6 +87,7 @@ final class FirstPartyAnalyticsServiceProvider extends ServiceProvider
         AboutCommand::add('First-Party Analytics', fn (): array => [
             'Version' => self::version(),
             'Tracking' => config('first-party-analytics.enabled') ? (config('first-party-analytics.cookies') ? 'on, with cookies' : 'on, no cookies') : 'off',
+            'IP storage' => self::ipStorage(),
             'Dashboard' => config('first-party-analytics.dashboard.enabled') ? '/'.trim((string) config('first-party-analytics.dashboard.path'), '/') : 'off',
             'Support' => 'https://amjad.com.pk/contact?utm_source=artisan&utm_medium=about&utm_campaign=laravel-first-party-analytics',
         ]);
@@ -108,6 +110,16 @@ final class FirstPartyAnalyticsServiceProvider extends ServiceProvider
             'endpoint' => route('first-party-analytics.event', absolute: false),
             'nonce' => $nonce,
         ])->render();
+    }
+
+    /** The "ip" option as `about` shows it; an unknown value is named, since it stores nothing. */
+    public static function ipStorage(): string
+    {
+        $mode = config('first-party-analytics.ip', 'none');
+
+        return is_string($mode) && in_array($mode, Ip::MODES, true)
+            ? $mode
+            : sprintf('none (unknown value %s, expected none, anonymize or full)', json_encode($mode));
     }
 
     public static function version(): string

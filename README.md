@@ -14,8 +14,9 @@ ordered funnels** in two tables of your Laravel app's own database, filters out 
 a gated Blade dashboard.
 
 Privacy is the default: **no cookies** unless you turn them on, **no IP address stored** unless you turn it
-on, Do-Not-Track and Global Privacy Control respected, no raw user agents, headers or request bodies stored
-(except the event name and properties your tracking script sends),
+on, Do-Not-Track and Global Privacy Control respected, no raw user agents or request bodies stored (except
+the event name and properties your tracking script sends), no headers stored except the two-letter country
+code from your CDN's `CF-IPCountry` header (which you can turn off),
 nothing from the query string except UTM parameters and `?ref=`, retention pruning built in, and
 **no network calls at all**. Writes happen after the response is sent (or
 on your queue), in one batch per request.
@@ -69,7 +70,7 @@ A **visit** groups a visitor's pageviews and events. It ends after 30 minutes wi
 | Landing page | path only; of the query string only the UTM parameters and `?ref=` are kept (below) |
 | Source | `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content` (or `?ref=` as the source), and the referrer: another site's URL **without its query string**, and its host |
 | Device | browser, operating system and device type (desktop, mobile, tablet), parsed and then discarded: the user agent itself is never stored |
-| Country | only from a header your CDN already sends (`CF-IPCountry` by default); no GeoIP lookups |
+| Country | only from a header your CDN already sends (`CF-IPCountry` by default; `country_header` = `null` turns it off); no GeoIP lookups |
 | IP | **nothing by default** (`ip` = `none`); opt in to `anonymize` (last IPv4 octet / last 80 IPv6 bits zeroed) or `full` |
 | User | the signed-in user's id, if any |
 
@@ -85,8 +86,9 @@ Payment and sign-in pages that send visitors back mid-visit (`checkout.stripe.co
 
 | Option | Default | |
 |---|---|---|
-| `cookies` | `false` | No cookie is set. The visitor id is a keyed hash (HMAC-SHA256) of the IP, user agent and host. The key is a **random salt made for each UTC day**, kept in your cache and deleted after two days. While the day lasts, anyone who can read that cache entry could recompute an id from a known IP and browser; once the salt is gone, nobody can, not even with `APP_KEY`. The same person gets a new id every day, so nobody can be followed across days. The cache also keeps each visit together. Set `true` (or `ANALYTICS_COOKIES=true`) for a first-party `fpa_visitor` cookie (365 days, `visitor_days`) and an `fpa_visit` cookie (30 minutes): then returning visitors are recognised, and a visitor's earlier anonymous visits are linked to them when they sign up. Both are `HttpOnly`, `SameSite=Lax` and encrypted like your other cookies. |
-| `ip` | `none` | No IP is stored (no report uses it). `anonymize` stores it with the last IPv4 octet / last 80 IPv6 bits zeroed; `full` stores it as is. Also `ANALYTICS_IP`. |
+| `cookies` | `false` | No cookie is set. The visitor id is a keyed hash (HMAC-SHA256) of the IP, user agent and host. The key is a **random salt made for each UTC day**, kept in your cache until that day ends at midnight UTC. While the day lasts, anyone who can read that cache entry could recompute an id from a known IP and browser; once the day is over the salt is gone and nobody can, not even with `APP_KEY`. The same person gets a new id every day, so nobody can be followed across days. The cache also keeps each visit together. Set `true` (or `ANALYTICS_COOKIES=true`) for a first-party `fpa_visitor` cookie (365 days, `visitor_days`) and an `fpa_visit` cookie (30 minutes): then returning visitors are recognised, and a visitor's earlier anonymous visits are linked to them when they sign up. Both are `HttpOnly`, `SameSite=Lax` and encrypted like your other cookies. |
+| `ip` | `none` | No IP is stored (no report uses it). `anonymize` stores it with the last IPv4 octet / last 80 IPv6 bits zeroed; `full` stores it as is. Also `ANALYTICS_IP`. **Any other value (a typo) stores no IP**, logs a warning naming the value, and `php artisan about` shows it. |
+| `country_header` | `CF-IPCountry` | The one request header that is stored: its two-letter value becomes the visit's country. Set it to `null` (or `ANALYTICS_COUNTRY_HEADER=` empty) to store no country. |
 | `respect_dnt` | `true` | Browsers sending `DNT: 1` are not recorded at all. |
 | `respect_gpc` | `true` | Browsers sending `Sec-GPC: 1` are not recorded at all. |
 | `retention_days` | `395` | `php artisan analytics:prune` deletes older visits and events. `null` keeps everything. |
@@ -257,8 +259,8 @@ the connection are in the config) and `first-party-analytics-views`.
 | `auto_track` | `true` | adds the tracking middleware to the `web` group; set `false` and use the `analytics.track` middleware alias on the routes you choose |
 | `exclude_paths` | see above | `Request::is()` patterns that are never recorded |
 | `visit_minutes` | `30` | inactivity that ends a visit |
-| `cache_store` | default store | where no-cookie visits are kept |
-| `country_header` | `CF-IPCountry` | header with a two-letter country code |
+| `cache_store` | default store | keeps no-cookie visits together and holds each day's salt (`ANALYTICS_CACHE_STORE`). Use a store that lives across requests and is **shared by all your servers** (redis, database, memcached). With `array`, every request is a new visit; with a per-server store (`file`, `apc`), each server makes its own salt, so one person counts as a visitor per server. |
+| `country_header` | `CF-IPCountry` | header with a two-letter country code; `null` stores no country |
 | `database.connection` | default | a separate connection for analytics, if you like |
 | `dashboard.top` | `10` | rows per list |
 

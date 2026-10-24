@@ -112,7 +112,8 @@ final class Visits
      */
     private function row(Request $request, array $visit, ?string $landingPath): array
     {
-        $country = strtoupper((string) $request->headers->get((string) config('first-party-analytics.country_header', 'CF-IPCountry')));
+        $header = config('first-party-analytics.country_header', 'CF-IPCountry');
+        $country = is_string($header) && $header !== '' ? strtoupper((string) $request->headers->get($header)) : '';
 
         return [
             'token' => $visit['token'],
@@ -123,7 +124,7 @@ final class Visits
             ...Source::fromRequest($request),
             ...UserAgent::parse($request->userAgent()),
             'country' => preg_match('/^[A-Z]{2}$/', $country) === 1 && ! in_array($country, ['XX', 'T1'], true) ? $country : null,
-            'ip' => Ip::forStorage($request->ip(), (string) config('first-party-analytics.ip', 'none')),
+            'ip' => Ip::forStorage($request->ip(), Ip::mode()),
         ];
     }
 
@@ -136,8 +137,8 @@ final class Visits
         }
 
         // No cookie: a keyed hash of the IP, user agent and host. The key is a random salt made for
-        // the current UTC day, kept in the cache and dropped after two days, so once a day is over
-        // nobody (not even with APP_KEY) can recompute an id from a known IP and browser.
+        // the current UTC day and kept in the cache until that day ends, so once a day is over nobody
+        // (not even with APP_KEY) can recompute an id from a known IP and browser.
         return substr(hash_hmac('sha256', implode('|', [
             (string) $request->ip(),
             (string) $request->userAgent(),
@@ -145,7 +146,7 @@ final class Visits
         ]), $this->dailySalt()), 0, 32);
     }
 
-    /** The random salt of the current UTC day (one cache write a day; `add` keeps concurrent requests on one salt). */
+    /** The random salt of the current UTC day, expiring at midnight UTC (one cache write a day; `add` keeps concurrent requests on one salt). */
     private function dailySalt(): string
     {
         $day = Date::now()->utc()->format('Y-m-d');
@@ -158,7 +159,7 @@ final class Visits
         $salt = null;
 
         try {
-            $this->store()->add($key, bin2hex(random_bytes(32)), 2 * 86400);
+            $this->store()->add($key, bin2hex(random_bytes(32)), Date::now()->utc()->addDay()->startOfDay());
             $salt = $this->store()->get($key);
         } catch (Throwable $e) {
             report($e);

@@ -1,9 +1,12 @@
 <?php
 
 use AmjadIqbal\FirstPartyAnalytics\Facades\Analytics;
+use AmjadIqbal\FirstPartyAnalytics\FirstPartyAnalyticsServiceProvider;
+use AmjadIqbal\FirstPartyAnalytics\Support\Ip;
 use AmjadIqbal\FirstPartyAnalytics\Tests\TestCase;
 use AmjadIqbal\FirstPartyAnalytics\Visits;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 it('records a pageview and starts a visit with its source', function () {
     $this->browse('/pricing?utm_source=newsletter&utm_medium=email&utm_campaign=launch&utm_term=t&utm_content=c&email=x@example.com', [
@@ -179,6 +182,42 @@ it('cannot recompute a visitor id once the day\'s salt is gone', function () {
     $this->browse('/', ip: '198.51.100.9');
 
     expect($this->visits()->distinct()->count('visitor'))->toBe(2);
+});
+
+it('deletes the day\'s salt at midnight UTC', function () {
+    $this->travelTo('2026-10-20 23:59:30');
+    $this->browse('/');
+    expect(app('cache')->store()->get('fpa:salt:2026-10-20'))->toBeString();
+
+    $this->travelTo('2026-10-21 00:00:01');
+    expect(app('cache')->store()->get('fpa:salt:2026-10-20'))->toBeNull();
+});
+
+it('stores no IP for an unknown ip value, warns once and shows it in about', function () {
+    $warned = new ReflectionProperty(Ip::class, 'warned');
+    $warned->setValue(null, false);
+    Log::spy();
+    config(['first-party-analytics.ip' => 'anonymise']); // British spelling: not a valid value
+
+    $this->browse('/', ip: '203.0.113.77');
+    $this->browse('/', ip: '192.0.2.5');
+
+    expect($this->visits()->pluck('ip')->all())->toBe([null, null]);
+    Log::shouldHaveReceived('warning')->once()
+        ->with(Mockery::on(fn (string $message) => str_contains($message, '"anonymise"')));
+
+    expect(FirstPartyAnalyticsServiceProvider::ipStorage())
+        ->toBe('none (unknown value "anonymise", expected none, anonymize or full)');
+    $this->artisan('about')->expectsOutputToContain('IP storage')->assertSuccessful();
+});
+
+it('stores no country when the country header is turned off', function () {
+    config(['first-party-analytics.country_header' => null]);
+    $this->browse('/', ['CF-IPCountry' => 'DE']);
+    config(['first-party-analytics.country_header' => '']);
+    $this->browse('/', ['CF-IPCountry' => 'FR'], ip: '192.0.2.8');
+
+    expect($this->visits()->pluck('country')->all())->toBe([null, null]);
 });
 
 it('splits a no-cookie visit at midnight UTC', function () {

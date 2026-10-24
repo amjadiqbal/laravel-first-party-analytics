@@ -31,9 +31,9 @@ return [
     |
     | cookies     false (default): no cookie is set. A visitor id is a keyed
     |             hash of the IP, user agent and host. The key is a random
-    |             salt made for each UTC day, kept in the cache and dropped
-    |             after two days, so an id cannot be recomputed once its day
-    |             is over (not even with APP_KEY). The same person gets a new
+    |             salt made for each UTC day and kept in the cache until that
+    |             day ends (midnight UTC), so an id cannot be recomputed once
+    |             its day is over (not even with APP_KEY). The same person gets a new
     |             id every day, and a visit that crosses midnight UTC is
     |             split in two. Visits are kept together with the cache.
     |             true: a first-party visitor cookie (visitor_days) and a visit
@@ -43,12 +43,18 @@ return [
     |
     | ip          "none" (default) stores no IP. "anonymize" stores it with
     |             the last IPv4 octet / last 80 IPv6 bits zeroed, "full"
-    |             stores it as is. No report uses the IP.
+    |             stores it as is. No report uses the IP. Any other value
+    |             stores no IP and logs a warning naming it (also shown by
+    |             php artisan about).
     |
     | respect_dnt / respect_gpc   a browser that sends DNT: 1 or Sec-GPC: 1 is
     |             not recorded at all.
     |
-    | Raw user agents and headers are never stored, nor request bodies (except
+    | country_header  the one header that is stored: its two-letter value
+    |             becomes the visit's country (CF-IPCountry, sent by
+    |             Cloudflare). null (ANALYTICS_COUNTRY_HEADER=) stores none.
+    |
+    | Raw user agents and other headers are never stored, nor request bodies (except
     | the event name and properties the tracking script sends). Of the query
     | string, only the UTM parameters and ?ref= are kept.
     |
@@ -68,7 +74,7 @@ return [
 
     'respect_gpc' => true,
 
-    'country_header' => 'CF-IPCountry',
+    'country_header' => env('ANALYTICS_COUNTRY_HEADER', 'CF-IPCountry'),
 
     /*
     | Hosts that send visitors back to you mid-visit (payment pages, sign-in
@@ -78,7 +84,16 @@ return [
 
     'ignore_referrers' => ['checkout.stripe.com', 'paypal.com', 'accounts.google.com', 'appleid.apple.com'],
 
-    'cache_store' => null,
+    /*
+    | The cache store (null = your default) that keeps no-cookie visits
+    | together and holds each day's salt. Use a store that lives across
+    | requests and is shared by all your servers (redis, database,
+    | memcached): with "array" every request is a new visit, and with a
+    | per-server store (file, apc) each server makes its own salt, so the
+    | same person counts as one visitor per server.
+    */
+
+    'cache_store' => env('ANALYTICS_CACHE_STORE'),
 
     /*
     |--------------------------------------------------------------------------
